@@ -35,13 +35,16 @@ enum Distiller {
             return false
         }
 
-        corpus.digest = Digest(text: String(trimmed.prefix(guideLimit)),
-                               generatedAt: Date(),
-                               sourceHash: corpus.corpusHash(),
-                               exampleCount: corpus.spam.count + corpus.good.count)
+        corpus.digest = Digest(
+            text: String(trimmed.prefix(guideLimit)),
+            generatedAt: Date(),
+            sourceHash: corpus.corpusHash(),
+            exampleCount: corpus.spam.count + corpus.good.count)
         corpus.save(to: databasePath)
-        FileHandle.standardError.write(Data(
-            "\(StrangeLove.executableName): distilled \(corpus.spam.count) spam / \(corpus.good.count) good examples into a guide.\n".utf8))
+        FileHandle.standardError.write(
+            Data(
+                "\(StrangeLove.executableName): distilled \(corpus.spam.count) spam / \(corpus.good.count) good examples into a guide.\n"
+                    .utf8))
         return true
     }
 
@@ -49,27 +52,27 @@ enum Distiller {
 
     private static func distillPrompt(corpus: Corpus) -> String {
         var text = """
-        You are tuning a personal email spam filter. Below are messages the user \
-        has labelled SPAM (junk/scams/phishing/unsolicited bulk or marketing) and \
-        LEGITIMATE (ham). Write a concise guide that a small, less capable model \
-        can follow to classify *this user's* incoming mail the same way.
+            You are tuning a personal email spam filter. Below are messages the user \
+            has labelled SPAM (junk/scams/phishing/unsolicited bulk or marketing) and \
+            LEGITIMATE (ham). Write a concise guide that a small, less capable model \
+            can follow to classify *this user's* incoming mail the same way.
 
-        Describe the concrete, observable traits that separate this user's spam \
-        from their legitimate mail: sender names/domains, subject patterns, \
-        topics, link styles, tone, language. Call out non-obvious rules (e.g. if \
-        the user treats branded marketing newsletters from real companies as \
-        spam). Keep it under ~300 words, plain prose or bullet points, no preamble \
-        or sign-off. Output only the guide.
+            Describe the concrete, observable traits that separate this user's spam \
+            from their legitimate mail: sender names/domains, subject patterns, \
+            topics, link styles, tone, language. Call out non-obvious rules (e.g. if \
+            the user treats branded marketing newsletters from real companies as \
+            spam). Keep it under ~300 words, plain prose or bullet points, no preamble \
+            or sign-off. Output only the guide.
 
-        """
+            """
 
         if !corpus.spam.isEmpty {
             text += "\n=== Messages the user labelled SPAM ===\n"
-            for ex in corpus.spam { text += exampleLine(ex) + "\n" }
+            text += corpus.spam.map { exampleLine($0) + "\n" }.joined()
         }
         if !corpus.good.isEmpty {
             text += "\n=== Messages the user labelled LEGITIMATE ===\n"
-            for ex in corpus.good { text += exampleLine(ex) + "\n" }
+            text += corpus.good.map { exampleLine($0) + "\n" }.joined()
         }
         return text
     }
@@ -87,7 +90,9 @@ enum Distiller {
         var arguments = ["-p"]
         if let model { arguments += ["--model", model] }
 
-        if let override = ProcessInfo.processInfo.environment[StrangeLove.claudeEnvVar], !override.isEmpty {
+        if let override = ProcessInfo.processInfo.environment[StrangeLove.claudeEnvVar],
+            !override.isEmpty
+        {
             process.executableURL = URL(fileURLWithPath: override)
             process.arguments = arguments
         } else {
@@ -126,6 +131,7 @@ enum Distiller {
     }
 
     private static func warn(_ message: String) {
-        FileHandle.standardError.write(Data(("\(StrangeLove.executableName): " + message + "\n").utf8))
+        FileHandle.standardError.write(
+            Data(("\(StrangeLove.executableName): " + message + "\n").utf8))
     }
 }

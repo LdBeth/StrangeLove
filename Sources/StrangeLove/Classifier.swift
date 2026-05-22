@@ -48,7 +48,8 @@ enum Classifier {
     /// spam signal yields true.
     private static func interpret(_ text: String) -> Bool {
         let lower = text.lowercased()
-        guard let first = lower.range(of: #"\b(spam|ham|yes|no)\b"#, options: .regularExpression) else {
+        guard let first = lower.range(of: #"\b(spam|ham|yes|no)\b"#, options: .regularExpression)
+        else {
             return false
         }
         let word = lower[first]
@@ -59,18 +60,20 @@ enum Classifier {
 
     private static func instructions(corpus: Corpus) -> String {
         var text = """
-        You are an email spam classifier. Decide whether a single email message \
-        is spam (junk, scams, phishing, or unsolicited bulk/marketing mail) or \
-        legitimate (ham). Base your decision on the sender, subject, and body. \
-        Reply with exactly one word: SPAM or HAM. Do not explain.
-        """
+            You are an email spam classifier. Decide whether a single email message \
+            is spam (junk, scams, phishing, or unsolicited bulk/marketing mail) or \
+            legitimate (ham). Base your decision on the sender, subject, and body. \
+            Reply with exactly one word: SPAM or HAM. Do not explain.
+            """
 
         // Preferred: the guide distilled from the message DB by a larger model
         // (`StrangeLove distill`). A small model follows articulated guidance far
         // better than it imitates raw examples, so the guide replaces few-shot.
         if let digest = corpus.digest {
             if digest.sourceHash != corpus.corpusHash() {
-                warn("classification guide is stale (corpus changed since last distill); using it anyway.")
+                warn(
+                    "classification guide is stale (corpus changed since last distill); using it anyway."
+                )
             }
             text += "\n\nGuide to this user's spam vs. legitimate mail:\n" + digest.text
             return text
@@ -82,15 +85,11 @@ enum Classifier {
 
         if !spamExamples.isEmpty {
             text += "\n\nExamples the user has marked as SPAM:"
-            for ex in spamExamples {
-                text += "\n- \(exampleLine(ex))"
-            }
+            text += spamExamples.map { "\n- \(exampleLine($0))" }.joined()
         }
         if !goodExamples.isEmpty {
             text += "\n\nExamples the user has marked as LEGITIMATE (not spam):"
-            for ex in goodExamples {
-                text += "\n- \(exampleLine(ex))"
-            }
+            text += goodExamples.map { "\n- \(exampleLine($0))" }.joined()
         }
         return text
     }
@@ -112,6 +111,7 @@ enum Classifier {
     }
 
     private static func warn(_ message: String) {
-        FileHandle.standardError.write(Data(("\(StrangeLove.executableName): " + message + "\n").utf8))
+        FileHandle.standardError.write(
+            Data(("\(StrangeLove.executableName): " + message + "\n").utf8))
     }
 }

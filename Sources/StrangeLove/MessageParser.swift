@@ -11,7 +11,8 @@ struct ParsedMessage {
     /// distiller (a large model) rather than the on-device prompt, so we keep a
     /// generous slice for better summarization.
     var snippet: String {
-        let collapsed = body
+        let collapsed =
+            body
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
         let trimmed = collapsed.trimmingCharacters(in: .whitespaces)
@@ -38,25 +39,31 @@ enum MessageParser {
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
 
-        let body = extractText(body: bodyRaw,
-                               contentType: contentType,
-                               encoding: encoding)
+        let body = extractText(
+            body: bodyRaw,
+            contentType: contentType,
+            encoding: encoding)
 
-        return ParsedMessage(sender: sender,
-                             subject: subject,
-                             body: String(body.prefix(bodyLimit)))
+        return ParsedMessage(
+            sender: sender,
+            subject: subject,
+            body: String(body.prefix(bodyLimit)))
     }
 
     // MARK: - Header / body split
 
     private static func splitHeadersAndBody(_ text: String) -> (String, String) {
         if let range = text.range(of: "\r\n\r\n") {
-            return (String(text[..<range.lowerBound]),
-                    String(text[range.upperBound...]))
+            return (
+                String(text[..<range.lowerBound]),
+                String(text[range.upperBound...])
+            )
         }
         if let range = text.range(of: "\n\n") {
-            return (String(text[..<range.lowerBound]),
-                    String(text[range.upperBound...]))
+            return (
+                String(text[..<range.lowerBound]),
+                String(text[range.upperBound...])
+            )
         }
         return (text, "")
     }
@@ -94,9 +101,11 @@ enum MessageParser {
 
     // MARK: - MIME body extraction
 
-    private static func extractText(body: String,
-                                    contentType: String,
-                                    encoding: String) -> String {
+    private static func extractText(
+        body: String,
+        contentType: String,
+        encoding: String
+    ) -> String {
         let lowerType = contentType.lowercased()
 
         if lowerType.contains("multipart"), let boundary = boundary(from: contentType) {
@@ -162,7 +171,8 @@ enum MessageParser {
             return value
         }
         // Up to the next ';' or whitespace.
-        if let end = value.firstIndex(where: { $0 == ";" || $0 == " " || $0 == "\r" || $0 == "\n" }) {
+        if let end = value.firstIndex(where: { $0 == ";" || $0 == " " || $0 == "\r" || $0 == "\n" })
+        {
             return String(value[..<end])
         }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,19 +201,23 @@ enum MessageParser {
         var i = 0
         while i < bytes.count {
             let b = bytes[i]
-            if b == 0x3D { // '='
+            if b == 0x3D {  // '='
                 // Soft line break "=\r\n" or "=\n"
                 if i + 1 < bytes.count && bytes[i + 1] == 0x0A {
-                    i += 2; continue
+                    i += 2
+                    continue
                 }
                 if i + 2 < bytes.count && bytes[i + 1] == 0x0D && bytes[i + 2] == 0x0A {
-                    i += 3; continue
+                    i += 3
+                    continue
                 }
                 if i + 2 < bytes.count,
-                   let hi = hexValue(bytes[i + 1]),
-                   let lo = hexValue(bytes[i + 2]) {
+                    let hi = hexValue(bytes[i + 1]),
+                    let lo = hexValue(bytes[i + 2])
+                {
                     output.append(UInt8(hi * 16 + lo))
-                    i += 3; continue
+                    i += 3
+                    continue
                 }
                 output.append(b)
                 i += 1
@@ -217,9 +231,9 @@ enum MessageParser {
 
     private static func hexValue(_ byte: UInt8) -> Int? {
         switch byte {
-        case 0x30...0x39: return Int(byte - 0x30)        // 0-9
-        case 0x41...0x46: return Int(byte - 0x41 + 10)   // A-F
-        case 0x61...0x66: return Int(byte - 0x61 + 10)   // a-f
+        case 0x30...0x39: return Int(byte - 0x30)  // 0-9
+        case 0x41...0x46: return Int(byte - 0x41 + 10)  // A-F
+        case 0x61...0x66: return Int(byte - 0x61 + 10)  // a-f
         default: return nil
         }
     }
@@ -315,7 +329,8 @@ enum MessageParser {
                 if !insideTag { result.append(ch) }
             }
         }
-        return result
+        return
+            result
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&lt;", with: "<")

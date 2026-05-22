@@ -17,8 +17,10 @@ struct StrangeLove {
         let argv = Array(CommandLine.arguments.dropFirst())
 
         guard let args = Arguments.parse(argv) else {
-            FileHandle.standardError.write(Data(
-                "Usage: \(executableName) [-config FILE] [-f DBFILE] (mark | add -v (-spam|-good) | distill [--model NAME])\n".utf8))
+            FileHandle.standardError.write(
+                Data(
+                    "Usage: \(executableName) [-config FILE] [-f DBFILE] (mark | add -v (-spam|-good) | distill [--model NAME])\n"
+                        .utf8))
             exit(2)
         }
 
@@ -39,14 +41,16 @@ struct StrangeLove {
 
         case .add(let spam):
             var corpus = Corpus.load(from: args.databasePath)
-            corpus.add(Example(sender: message.sender,
-                               subject: message.subject,
-                               snippet: message.snippet),
-                       spam: spam)
+            corpus.add(
+                Example(
+                    sender: message.sender,
+                    subject: message.subject,
+                    snippet: message.snippet),
+                spam: spam)
             corpus.save(to: args.databasePath)
 
         case .distill:
-            break // handled above
+            break  // handled above
         }
 
         exit(0)

@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 /// A single learned message used as a few-shot example.
 struct Example: Codable {
@@ -44,7 +44,8 @@ struct Corpus: Codable {
 
     static func load(from path: String) -> Corpus {
         guard let data = FileManager.default.contents(atPath: path),
-              let corpus = try? JSONDecoder().decode(Corpus.self, from: data) else {
+            let corpus = try? JSONDecoder().decode(Corpus.self, from: data)
+        else {
             return Corpus()
         }
         return corpus
@@ -53,15 +54,19 @@ struct Corpus: Codable {
     /// Append an example to the chosen category, trimming oldest beyond the cap.
     mutating func add(_ example: Example, spam isSpam: Bool) {
         if isSpam {
-            spam.append(example)
-            if spam.count > Corpus.maxPerCategory {
-                spam.removeFirst(spam.count - Corpus.maxPerCategory)
-            }
+            Corpus.appendCapped(&spam, example)
         } else {
-            good.append(example)
-            if good.count > Corpus.maxPerCategory {
-                good.removeFirst(good.count - Corpus.maxPerCategory)
-            }
+            Corpus.appendCapped(&good, example)
+        }
+    }
+
+    /// Append, then keep only the most-recent `maxPerCategory` (i.e.
+    /// `suffix(maxPerCategory)` of the appended list — the same "keep recent N"
+    /// operation `recentSpam`/`recentGood` use, done in place to avoid realloc).
+    private static func appendCapped(_ list: inout [Example], _ example: Example) {
+        list.append(example)
+        if list.count > maxPerCategory {
+            list.removeFirst(list.count - maxPerCategory)
         }
     }
 
@@ -69,8 +74,9 @@ struct Corpus: Codable {
         guard let data = try? JSONEncoder().encode(self) else { return }
         let url = URL(fileURLWithPath: path)
         let dir = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir,
-                                                 withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true)
         // Atomic write tolerates Wanderlust's sequential concurrent calls.
         try? data.write(to: url, options: .atomic)
     }
@@ -84,8 +90,9 @@ struct Corpus: Codable {
     /// when the stored guide has fallen behind newly-learned mail.
     func corpusHash() -> String {
         func line(_ e: Example) -> String { "\(e.sender)\u{1}\(e.subject)\u{1}\(e.snippet)" }
-        let joined = "SPAM\n" + spam.map(line).joined(separator: "\n")
-                   + "\nGOOD\n" + good.map(line).joined(separator: "\n")
+        let joined =
+            "SPAM\n" + spam.map(line).joined(separator: "\n")
+            + "\nGOOD\n" + good.map(line).joined(separator: "\n")
         let hash = SHA256.hash(data: Data(joined.utf8))
         return hash.map { String(format: "%02x", $0) }.joined()
     }

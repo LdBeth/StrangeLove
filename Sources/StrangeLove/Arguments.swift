@@ -50,7 +50,7 @@ struct Arguments {
                 if i + 1 < argv.count { dbPath = argv[i + 1] }
                 i += 1
             case "-v":
-                break // verbosity flag, ignored
+                break  // verbosity flag, ignored
             case "mark":
                 sawMark = true
             case "add":
