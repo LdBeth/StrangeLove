@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`EModels` is a Swift command-line spam filter for the Emacs **Wanderlust** mail
+`StrangeLove` is a Swift command-line spam filter for the Emacs **Wanderlust** mail
 client. It is a drop-in replacement for the `spamoracle` program that
 Wanderlust's `elsp-spamoracle` backend shells out to, but classifies mail with
 Apple's on-device `FoundationModels` LLM instead of a Bayesian database.
@@ -13,8 +13,8 @@ Requires macOS 26 with Apple Intelligence enabled.
 ## Build & run
 
 ```sh
-swift build                 # debug -> .build/debug/EModels
-swift build -c release      # release -> .build/release/EModels (used by Wanderlust)
+swift build                 # debug -> .build/debug/StrangeLove
+swift build -c release      # release -> .build/release/StrangeLove (used by Wanderlust)
 ```
 
 There are no automated tests; verify by piping a raw email to the binary:
@@ -22,12 +22,12 @@ There are no automated tests; verify by piping a raw email to the binary:
 ```sh
 # classify (header block of stdout gets X-Spam: yes; iff spam)
 printf 'From: x\nSubject: Win a FREE iPhone!!!\n\nClaim your prize\n' \
-  | .build/debug/EModels -f /tmp/spam.db mark | head -1
+  | .build/debug/StrangeLove -f /tmp/spam.db mark | head -1
 # learn
-... | .build/debug/EModels -f /tmp/spam.db add -v -spam
-... | .build/debug/EModels -f /tmp/spam.db add -v -good
+... | .build/debug/StrangeLove -f /tmp/spam.db add -v -spam
+... | .build/debug/StrangeLove -f /tmp/spam.db add -v -good
 # distill the learned examples into a classification guide (out-of-band; needs `claude` CLI)
-.build/debug/EModels -f /tmp/spam.db distill [--model NAME]
+.build/debug/StrangeLove -f /tmp/spam.db distill [--model NAME]
 ```
 
 The host has pkgsrc (no Homebrew); ask the user before installing toolchain packages.
@@ -65,13 +65,13 @@ spam corpus (66% → 27%). So learning and prompt-synthesis are separated:
    With a distilled guide, held-out detection rose to ~97% at 0 false positives.
 
 If no digest exists yet, `mark` falls back to a few raw few-shot examples.
-`distill` uses `$EMODELS_CLAUDE` for the binary if set, else `claude` on PATH.
+`distill` uses `$STRANGELOVE_CLAUDE` for the binary if set, else `claude` on PATH.
 
 ## Architecture
 
-Single executable target, files under `Sources/EModels/`, each one concern:
+Single executable target, files under `Sources/StrangeLove/`, each one concern:
 
-- **`EModels.swift`** — `@main async`. Reads stdin, parses argv, dispatches. In
+- **`StrangeLove.swift`** — `@main async`. Reads stdin, parses argv, dispatches. In
   `mark` it prepends the `X-Spam:` header to the *original* bytes (keeping it
   inside the header block); `add` appends an example; `distill` operates on the
   stored corpus and reads no message from stdin.

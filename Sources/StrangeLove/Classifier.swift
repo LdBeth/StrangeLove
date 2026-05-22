@@ -66,7 +66,7 @@ enum Classifier {
         """
 
         // Preferred: the guide distilled from the message DB by a larger model
-        // (`EModels distill`). A small model follows articulated guidance far
+        // (`StrangeLove distill`). A small model follows articulated guidance far
         // better than it imitates raw examples, so the guide replaces few-shot.
         if let digest = corpus.digest {
             if digest.sourceHash != corpus.corpusHash() {
@@ -112,6 +112,6 @@ enum Classifier {
     }
 
     private static func warn(_ message: String) {
-        FileHandle.standardError.write(Data(("EModels: " + message + "\n").utf8))
+        FileHandle.standardError.write(Data(("\(StrangeLove.executableName): " + message + "\n").utf8))
     }
 }

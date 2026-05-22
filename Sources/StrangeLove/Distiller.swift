@@ -41,7 +41,7 @@ enum Distiller {
                                exampleCount: corpus.spam.count + corpus.good.count)
         corpus.save(to: databasePath)
         FileHandle.standardError.write(Data(
-            "EModels: distilled \(corpus.spam.count) spam / \(corpus.good.count) good examples into a guide.\n".utf8))
+            "\(StrangeLove.executableName): distilled \(corpus.spam.count) spam / \(corpus.good.count) good examples into a guide.\n".utf8))
         return true
     }
 
@@ -81,13 +81,13 @@ enum Distiller {
     // MARK: - claude CLI
 
     /// Run `claude -p [--model NAME]` with the prompt on stdin, returning stdout.
-    /// The binary is `$EMODELS_CLAUDE` if set, else `claude` resolved on PATH.
+    /// The binary is `$STRANGELOVE_CLAUDE` if set, else `claude` resolved on PATH.
     private static func invokeClaude(prompt: String, model: String?) throws -> String {
         let process = Process()
         var arguments = ["-p"]
         if let model { arguments += ["--model", model] }
 
-        if let override = ProcessInfo.processInfo.environment["EMODELS_CLAUDE"], !override.isEmpty {
+        if let override = ProcessInfo.processInfo.environment[StrangeLove.claudeEnvVar], !override.isEmpty {
             process.executableURL = URL(fileURLWithPath: override)
             process.arguments = arguments
         } else {
@@ -126,6 +126,6 @@ enum Distiller {
     }
 
     private static func warn(_ message: String) {
-        FileHandle.standardError.write(Data(("EModels: " + message + "\n").utf8))
+        FileHandle.standardError.write(Data(("\(StrangeLove.executableName): " + message + "\n").utf8))
     }
 }

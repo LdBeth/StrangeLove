@@ -9,7 +9,7 @@ struct Example: Codable {
 }
 
 /// A classification guide distilled from the message DB by a larger model
-/// (Claude, via `EModels distill`). Injected into the on-device classifier's
+/// (Claude, via `StrangeLove distill`). Injected into the on-device classifier's
 /// instructions in place of raw few-shot examples.
 struct Digest: Codable {
     var text: String
