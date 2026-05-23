@@ -58,11 +58,13 @@ enum Distiller {
             can follow to classify *this user's* incoming mail the same way.
 
             Describe the concrete, observable traits that separate this user's spam \
-            from their legitimate mail: sender names/domains, subject patterns, \
-            topics, link styles, tone, language. Call out non-obvious rules (e.g. if \
-            the user treats branded marketing newsletters from real companies as \
-            spam). Keep it under ~300 words, plain prose or bullet points, no preamble \
-            or sign-off. Output only the guide.
+            from their legitimate mail: sender names/domains, Reply-To / Return-Path \
+            disagreement with From, SPF/DKIM/DMARC verdicts, subject patterns, \
+            topics, link styles (including bait links where the visible anchor text \
+            disagrees with the bracketed [\u{2192} URL] that follows), tone, language. \
+            Call out non-obvious rules (e.g. if the user treats branded marketing \
+            newsletters from real companies as spam). Keep it under ~300 words, plain \
+            prose or bullet points, no preamble or sign-off. Output only the guide.
 
             """
 
@@ -78,7 +80,13 @@ enum Distiller {
     }
 
     private static func exampleLine(_ ex: Example) -> String {
-        "- From: \(ex.sender) | Subject: \(ex.subject) | \(ex.snippet)"
+        var parts = ["From: \(ex.sender)"]
+        if !ex.replyTo.isEmpty { parts.append("Reply-To: \(ex.replyTo)") }
+        if !ex.returnPath.isEmpty { parts.append("Return-Path: \(ex.returnPath)") }
+        if !ex.authSummary.isEmpty { parts.append("Auth: \(ex.authSummary)") }
+        parts.append("Subject: \(ex.subject)")
+        parts.append(ex.snippet)
+        return "- " + parts.joined(separator: " | ")
     }
 
     // MARK: - claude CLI

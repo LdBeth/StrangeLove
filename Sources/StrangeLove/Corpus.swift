@@ -6,6 +6,40 @@ struct Example: Codable {
     var sender: String
     var subject: String
     var snippet: String
+    /// Phishing-relevant headers captured at learn time; empty when the source
+    /// message lacked them. Fed to the distiller so it can articulate rules
+    /// about Reply-To/Return-Path mismatches and SPF/DKIM/DMARC verdicts.
+    var replyTo: String
+    var returnPath: String
+    var authSummary: String
+
+    init(
+        sender: String,
+        subject: String,
+        snippet: String,
+        replyTo: String = "",
+        returnPath: String = "",
+        authSummary: String = ""
+    ) {
+        self.sender = sender
+        self.subject = subject
+        self.snippet = snippet
+        self.replyTo = replyTo
+        self.returnPath = returnPath
+        self.authSummary = authSummary
+    }
+
+    // Tolerates corpora written before the header fields existed: missing keys
+    // decode to "", so an upgrade doesn't silently wipe the user's training set.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sender = try c.decode(String.self, forKey: .sender)
+        subject = try c.decode(String.self, forKey: .subject)
+        snippet = try c.decode(String.self, forKey: .snippet)
+        replyTo = (try? c.decode(String.self, forKey: .replyTo)) ?? ""
+        returnPath = (try? c.decode(String.self, forKey: .returnPath)) ?? ""
+        authSummary = (try? c.decode(String.self, forKey: .authSummary)) ?? ""
+    }
 }
 
 /// A classification guide distilled from the message DB by a larger model
@@ -89,7 +123,10 @@ struct Corpus: Codable {
     /// A stable hash of all examples, used to stamp a `Digest` and to detect
     /// when the stored guide has fallen behind newly-learned mail.
     func corpusHash() -> String {
-        func line(_ e: Example) -> String { "\(e.sender)\u{1}\(e.subject)\u{1}\(e.snippet)" }
+        func line(_ e: Example) -> String {
+            "\(e.sender)\u{1}\(e.subject)\u{1}\(e.snippet)"
+                + "\u{1}\(e.replyTo)\u{1}\(e.returnPath)\u{1}\(e.authSummary)"
+        }
         let joined =
             "SPAM\n" + spam.map(line).joined(separator: "\n")
             + "\nGOOD\n" + good.map(line).joined(separator: "\n")

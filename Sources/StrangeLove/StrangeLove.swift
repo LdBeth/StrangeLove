@@ -45,7 +45,10 @@ struct StrangeLove {
                 Example(
                     sender: message.sender,
                     subject: message.subject,
-                    snippet: message.snippet),
+                    snippet: message.snippet,
+                    replyTo: message.replyTo,
+                    returnPath: message.returnPath,
+                    authSummary: message.authSummary),
                 spam: spam)
             corpus.save(to: args.databasePath)
 

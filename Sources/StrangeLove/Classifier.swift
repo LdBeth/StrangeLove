@@ -64,6 +64,13 @@ enum Classifier {
             is spam (junk, scams, phishing, or unsolicited bulk/marketing mail) or \
             legitimate (ham). Base your decision on the sender, subject, and body. \
             Reply with exactly one word: SPAM or HAM. Do not explain.
+
+            Fraud signals to weight heavily: Reply-To or Return-Path whose domain \
+            disagrees with From; SPF, DKIM, or DMARC marked fail/softfail/none on a \
+            mail claiming to be from a real brand; lookalike or unrelated domains in \
+            the From line; bait links where the visible anchor text disagrees with \
+            the bracketed [\u{2192} URL] that follows it (e.g. text says "paypal.com" \
+            but the URL points to a different host).
             """
 
         // Preferred: the guide distilled from the message DB by a larger model
@@ -95,19 +102,28 @@ enum Classifier {
     }
 
     private static func exampleLine(_ ex: Example) -> String {
-        "From: \(ex.sender) | Subject: \(ex.subject) | \(ex.snippet)"
+        var parts = ["From: \(ex.sender)"]
+        if !ex.replyTo.isEmpty { parts.append("Reply-To: \(ex.replyTo)") }
+        if !ex.returnPath.isEmpty { parts.append("Return-Path: \(ex.returnPath)") }
+        if !ex.authSummary.isEmpty { parts.append("Auth: \(ex.authSummary)") }
+        parts.append("Subject: \(ex.subject)")
+        parts.append(ex.snippet)
+        return parts.joined(separator: " | ")
     }
 
     private static func userPrompt(for message: ParsedMessage) -> String {
-        """
-        Classify this email.
-
-        From: \(message.sender)
-        Subject: \(message.subject)
-
-        Body:
-        \(message.body)
-        """
+        var text = "Classify this email.\n\nFrom: \(message.sender)"
+        if !message.replyTo.isEmpty {
+            text += "\nReply-To: \(message.replyTo)"
+        }
+        if !message.returnPath.isEmpty {
+            text += "\nReturn-Path: \(message.returnPath)"
+        }
+        if !message.authSummary.isEmpty {
+            text += "\nAuthentication: \(message.authSummary)"
+        }
+        text += "\nSubject: \(message.subject)\n\nBody:\n\(message.body)"
+        return text
     }
 
     private static func warn(_ message: String) {

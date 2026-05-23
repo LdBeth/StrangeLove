@@ -6,6 +6,14 @@ struct ParsedMessage {
     var sender: String
     var subject: String
     var body: String
+    /// `Reply-To` header (decoded, RFC 2047). Empty when absent. Exposed so the
+    /// classifier can spot phishing where Reply-To disagrees with From.
+    var replyTo: String = ""
+    /// `Return-Path` (envelope sender). Empty when absent.
+    var returnPath: String = ""
+    /// Compact summary of `Authentication-Results`, e.g. "spf=pass dkim=fail
+    /// dmarc=fail". Empty when no usable A-R header was present.
+    var authSummary: String = ""
 
     /// A single-line snippet stored with each learned example. Fed to the
     /// distiller (a large model) rather than the on-device prompt, so we keep a
@@ -33,6 +41,10 @@ enum MessageParser {
 
         let sender = decodeEncodedWords(headers["from"] ?? "")
         let subject = decodeEncodedWords(headers["subject"] ?? "")
+        let replyTo = decodeEncodedWords(headers["reply-to"] ?? "")
+        let returnPath = (headers["return-path"] ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        let authSummary = summarizeAuthResults(headers["authentication-results"] ?? "")
 
         let contentType = headers["content-type"] ?? "text/plain"
         let encoding = (headers["content-transfer-encoding"] ?? "")
@@ -47,7 +59,36 @@ enum MessageParser {
         return ParsedMessage(
             sender: sender,
             subject: subject,
-            body: String(body.prefix(bodyLimit)))
+            body: String(body.prefix(bodyLimit)),
+            replyTo: replyTo,
+            returnPath: returnPath,
+            authSummary: authSummary)
+    }
+
+    // MARK: - Authentication-Results
+
+    /// Extract just the SPF/DKIM/DMARC verdicts from an RFC 8601
+    /// `Authentication-Results` header — the full header is verbose and noisy,
+    /// but the three verdict words are the high-signal bits for phishing.
+    private static func summarizeAuthResults(_ raw: String) -> String {
+        guard !raw.isEmpty else { return "" }
+        var parts: [String] = []
+        for key in ["spf", "dkim", "dmarc"] {
+            let pattern = "(?i)\\b\(key)\\s*=\\s*([a-zA-Z]+)"
+            guard let match = raw.range(of: pattern, options: .regularExpression) else {
+                continue
+            }
+            let verdict =
+                raw[match]
+                .split(separator: "=", maxSplits: 1)
+                .last?
+                .trimmingCharacters(in: .whitespaces)
+                .lowercased() ?? ""
+            if !verdict.isEmpty {
+                parts.append("\(key)=\(verdict)")
+            }
+        }
+        return parts.joined(separator: " ")
     }
 
     // MARK: - Header / body split
@@ -319,22 +360,111 @@ enum MessageParser {
     // MARK: - HTML
 
     static func stripHTML(_ html: String) -> String {
-        var result = ""
-        var insideTag = false
-        for ch in html {
-            switch ch {
-            case "<": insideTag = true
-            case ">": insideTag = false
-            default:
-                if !insideTag { result.append(ch) }
+        // Tag-aware scan: drop most tags, but for <a href="..."> capture the
+        // href and emit it after the anchor text as "text [→ URL]". This lets
+        // the classifier see lookalike-domain / unrelated-host bait links that
+        // pure text-extraction would hide.
+        let chars = Array(html)
+        var output = ""
+        var insideAnchor = false
+        var anchorHref = ""
+        var anchorText = ""
+
+        var i = 0
+        while i < chars.count {
+            let ch = chars[i]
+            if ch == "<" {
+                var j = i + 1
+                while j < chars.count && chars[j] != ">" { j += 1 }
+                let tagBody = String(chars[(i + 1)..<min(j, chars.count)])
+                let lower = tagBody.lowercased()
+
+                if lower == "a" || lower.hasPrefix("a ") || lower.hasPrefix("a\t")
+                    || lower.hasPrefix("a\n") || lower.hasPrefix("a\r")
+                {
+                    insideAnchor = true
+                    anchorHref = extractHref(tagBody) ?? ""
+                    anchorText = ""
+                } else if lower == "/a" || lower.hasPrefix("/a ") || lower.hasPrefix("/a\t") {
+                    let text = anchorText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    output += text
+                    if shouldAnnotateHref(anchorHref, anchorText: text) {
+                        output += " [\u{2192} \(shortenURL(anchorHref))]"
+                    }
+                    insideAnchor = false
+                    anchorHref = ""
+                    anchorText = ""
+                }
+                // Any other tag is dropped silently.
+                i = (j < chars.count) ? j + 1 : chars.count
+            } else {
+                if insideAnchor {
+                    anchorText.append(ch)
+                } else {
+                    output.append(ch)
+                }
+                i += 1
             }
         }
+        if insideAnchor {
+            // Unterminated <a> — emit collected text, drop href.
+            output += anchorText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         return
-            result
+            output
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
+    }
+
+    /// Pull the `href` attribute out of an `<a ...>` tag body. Handles single,
+    /// double, and unquoted values. Returns nil if no `href` is present.
+    private static func extractHref(_ tagBody: String) -> String? {
+        guard let hrefRange = tagBody.range(of: "href", options: .caseInsensitive) else {
+            return nil
+        }
+        var rest = tagBody[hrefRange.upperBound...]
+        while let c = rest.first, c == " " || c == "\t" { rest = rest.dropFirst() }
+        guard rest.first == "=" else { return nil }
+        rest = rest.dropFirst()
+        while let c = rest.first, c == " " || c == "\t" { rest = rest.dropFirst() }
+
+        if let quote = rest.first, quote == "\"" || quote == "'" {
+            rest = rest.dropFirst()
+            if let end = rest.firstIndex(of: quote) {
+                return String(rest[..<end])
+            }
+            return String(rest)
+        }
+        // Unquoted href: read until whitespace or end of tag.
+        if let end = rest.firstIndex(where: {
+            $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r"
+        }) {
+            return String(rest[..<end])
+        }
+        return String(rest)
+    }
+
+    /// Decide whether the URL adds information beyond the visible anchor text.
+    /// Skip in-page anchors, mailto/tel, empty hrefs, and the common case where
+    /// the anchor text already spells out the URL (plain-text-style links).
+    private static func shouldAnnotateHref(_ href: String, anchorText: String) -> Bool {
+        guard !href.isEmpty else { return false }
+        let lower = href.lowercased()
+        if lower.hasPrefix("#") || lower.hasPrefix("mailto:") || lower.hasPrefix("tel:") {
+            return false
+        }
+        if anchorText.lowercased().contains(lower) { return false }
+        return true
+    }
+
+    /// Cap a single annotated URL so a 2 KB tracking link can't dominate the
+    /// 4 000-char body budget. Keeps enough to see the host and first path.
+    private static func shortenURL(_ url: String) -> String {
+        if url.count <= 120 { return url }
+        return String(url.prefix(117)) + "..."
     }
 }
