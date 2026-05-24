@@ -19,15 +19,22 @@ struct StrangeLove {
         guard let args = Arguments.parse(argv) else {
             FileHandle.standardError.write(
                 Data(
-                    "Usage: \(executableName) [-config FILE] [-f DBFILE] (mark | add -v (-spam|-good) | distill [--model NAME])\n"
+                    "Usage: \(executableName) [-config FILE] [-f DBFILE] (mark | add -v (-spam|-good) | distill [--model NAME] | reembed)\n"
                         .utf8))
             exit(2)
         }
 
-        // `distill` operates on the stored corpus, not on a piped message.
-        if case .distill = args.command {
+        // `distill` and `reembed` operate on the stored corpus, not on a piped
+        // message.
+        switch args.command {
+        case .distill:
             let ok = await Distiller.run(databasePath: args.databasePath, model: args.model)
             exit(ok ? 0 : 1)
+        case .reembed:
+            let ok = Reembedder.run(databasePath: args.databasePath)
+            exit(ok ? 0 : 1)
+        default:
+            break
         }
 
         let stdin = FileHandle.standardInput.readDataToEndOfFile()
@@ -41,6 +48,9 @@ struct StrangeLove {
 
         case .add(let spam):
             var corpus = Corpus.load(from: args.databasePath)
+            // Embeddings are backfilled out-of-band by `reembed`, mirroring how
+            // `distill` works: the Wanderlust-driven `add` hot path stays a
+            // pure structural write with no NLEmbedding cold-load.
             corpus.add(
                 Example(
                     sender: message.sender,
@@ -52,7 +62,7 @@ struct StrangeLove {
                 spam: spam)
             corpus.save(to: args.databasePath)
 
-        case .distill:
+        case .distill, .reembed:
             break  // handled above
         }
 

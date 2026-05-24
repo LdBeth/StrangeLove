@@ -9,7 +9,25 @@ import FoundationModels
 /// rather than using the `@Generable` guided-generation macros, which require a
 /// compiler-plugin not present in every Swift toolchain.
 enum Classifier {
+    /// k-NN fast-path policy. **Asymmetric on purpose**: the project's hard
+    /// invariant is fail-open (never flag legitimate mail as spam), so a SPAM
+    /// short-circuit that bypasses the LLM is much costlier than a HAM one. We
+    /// therefore require a tighter, larger SPAM neighbourhood than HAM:
+    ///   - HAM verdict: k=3 all-agree, mean cosine ≥ 0.75.
+    ///   - SPAM verdict: k=5 all-agree, mean cosine ≥ 0.88.
+    /// Anything else defers to the LLM, which keeps the FP discipline of the
+    /// distilled-guide path. The embedding ignores sender/Reply-To/auth
+    /// headers the LLM weighs, so over-trusting it on SPAM would regress FPs.
+    static let hamNeighbours = 3
+    static let hamThreshold: Float = 0.75
+    static let spamNeighbours = 5
+    static let spamThreshold: Float = 0.88
+
     static func classify(_ message: ParsedMessage, corpus: Corpus) async -> Bool {
+        if let verdict = fastPathVerdict(for: message, corpus: corpus) {
+            return verdict
+        }
+
         let model = SystemLanguageModel.default
         switch model.availability {
         case .available:
@@ -42,6 +60,90 @@ enum Classifier {
             warn("Classification failed (\(error)); treating as not spam.")
             return false
         }
+    }
+
+    /// Sentence-embedding k-NN fast-path. Returns the verdict when one of the
+    /// asymmetric conditions fires; nil to defer to the LLM. Always logs the
+    /// neighbourhood so the thresholds can be tuned from real traffic.
+    private static func fastPathVerdict(
+        for message: ParsedMessage,
+        corpus: Corpus
+    ) -> Bool? {
+        guard let query = Embedder.embed(message.subject + "\n" + message.snippet) else {
+            warn("fast-path skipped: no sentence encoder for detected language.")
+            return nil
+        }
+
+        // Fetch enough neighbours for the larger (SPAM) check; the HAM check
+        // reads only the first `hamNeighbours` of the same sorted list.
+        let neighbours = Embedder.topNeighbours(
+            query: query, corpus: corpus, k: spamNeighbours)
+        let neighbourhood = formatNeighbours(neighbours)
+
+        let sizes = Embedder.partitionSizes(corpus: corpus, language: query.language)
+
+        // HAM short-circuit (looser)
+        if let (verdict, mean) = tryPath(
+            k: hamNeighbours, threshold: hamThreshold,
+            targetIsSpam: false, counterweight: sizes.spam,
+            neighbours: neighbours)
+        {
+            warn(
+                "kNN lang=\(query.language) HAM-path k=\(hamNeighbours) "
+                    + String(format: "mean=%.3f", mean)
+                    + " pool=\(sizes.spam)S/\(sizes.ham)H"
+                    + " neighbours=[\(neighbourhood)]."
+            )
+            return verdict
+        }
+
+        // SPAM short-circuit (stricter)
+        if let (verdict, mean) = tryPath(
+            k: spamNeighbours, threshold: spamThreshold,
+            targetIsSpam: true, counterweight: sizes.ham,
+            neighbours: neighbours)
+        {
+            warn(
+                "kNN lang=\(query.language) SPAM-path k=\(spamNeighbours) "
+                    + String(format: "mean=%.3f", mean)
+                    + " pool=\(sizes.spam)S/\(sizes.ham)H"
+                    + " neighbours=[\(neighbourhood)]."
+            )
+            return verdict
+        }
+
+        warn(
+            "kNN lang=\(query.language) deferring to LLM; "
+                + "pool=\(sizes.spam)S/\(sizes.ham)H "
+                + "neighbours=[\(neighbourhood)]."
+        )
+        return nil
+    }
+
+    /// One asymmetric k-NN check. Returns `(verdict, meanSimilarity)` when the
+    /// top-`k` neighbours all agree on `targetIsSpam` with mean ≥ threshold AND
+    /// the opposing class has ≥`k` same-language examples in the pool
+    /// (counterweight). Returns nil to defer.
+    private static func tryPath(
+        k: Int,
+        threshold: Float,
+        targetIsSpam: Bool,
+        counterweight: Int,
+        neighbours: [Embedder.Neighbour]
+    ) -> (verdict: Bool, mean: Float)? {
+        let top = neighbours.prefix(k)
+        guard top.count == k,
+            top.allSatisfy({ $0.isSpam == targetIsSpam }),
+            counterweight >= k
+        else { return nil }
+        let mean = top.reduce(Float(0)) { $0 + $1.similarity } / Float(top.count)
+        guard mean >= threshold else { return nil }
+        return (targetIsSpam, mean)
+    }
+
+    private static func formatNeighbours(_ ns: [Embedder.Neighbour]) -> String {
+        ns.map { String(format: "%.3f(%@)", $0.similarity, $0.isSpam ? "S" : "H") }
+            .joined(separator: " ")
     }
 
     /// Map the model's free-text answer to a boolean. Fail-open: only an explicit

@@ -12,6 +12,14 @@ struct Example: Codable {
     var replyTo: String
     var returnPath: String
     var authSummary: String
+    /// `NLEmbedding.sentenceEmbedding` vector over `subject + "\n" + snippet`,
+    /// stored once at learn time so `mark`'s k-NN fast-path is just dot
+    /// products. `nil` when the detected language has no on-device encoder.
+    var embedding: [Float]?
+    /// `NLLanguage.rawValue` of the model that produced `embedding` (e.g. "en",
+    /// "ja"). Cross-language vectors are not comparable, so the fast-path uses
+    /// this to partition the corpus before scoring.
+    var embeddingLanguage: String?
 
     init(
         sender: String,
@@ -19,7 +27,9 @@ struct Example: Codable {
         snippet: String,
         replyTo: String = "",
         returnPath: String = "",
-        authSummary: String = ""
+        authSummary: String = "",
+        embedding: [Float]? = nil,
+        embeddingLanguage: String? = nil
     ) {
         self.sender = sender
         self.subject = subject
@@ -27,18 +37,8 @@ struct Example: Codable {
         self.replyTo = replyTo
         self.returnPath = returnPath
         self.authSummary = authSummary
-    }
-
-    // Tolerates corpora written before the header fields existed: missing keys
-    // decode to "", so an upgrade doesn't silently wipe the user's training set.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        sender = try c.decode(String.self, forKey: .sender)
-        subject = try c.decode(String.self, forKey: .subject)
-        snippet = try c.decode(String.self, forKey: .snippet)
-        replyTo = (try? c.decode(String.self, forKey: .replyTo)) ?? ""
-        returnPath = (try? c.decode(String.self, forKey: .returnPath)) ?? ""
-        authSummary = (try? c.decode(String.self, forKey: .authSummary)) ?? ""
+        self.embedding = embedding
+        self.embeddingLanguage = embeddingLanguage
     }
 }
 

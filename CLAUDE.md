@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## What this is
 
 `StrangeLove` is a Swift command-line spam filter for the Emacs **Wanderlust** mail
@@ -28,9 +26,9 @@ printf 'From: x\nSubject: Win a FREE iPhone!!!\n\nClaim your prize\n' \
 ... | .build/debug/StrangeLove -f /tmp/spam.db add -v -good
 # distill the learned examples into a classification guide (out-of-band; needs `claude` CLI)
 .build/debug/StrangeLove -f /tmp/spam.db distill [--model NAME]
+# backfill sentence embeddings on examples that lack them (out-of-band; no network)
+.build/debug/StrangeLove -f /tmp/spam.db reembed
 ```
-
-The host has pkgsrc (no Homebrew); ask the user before installing toolchain packages.
 
 ## The Wanderlust contract (do not break)
 
@@ -48,7 +46,7 @@ fed on stdin** and we are called three ways:
 Each may be preceded by `-config FILE` (ignored) and `-f DBFILE`. Exit code is
 not inspected by Wanderlust; we exit 0 on success, 2 on bad args.
 
-The `distill` subcommand (below) is **ours alone** — Wanderlust never calls it.
+The `distill` and `reembed` subcommands (below) are **ours alone** — Wanderlust never calls them.
 
 ## How classification is steered: distilled guide, not raw few-shot
 
@@ -83,9 +81,18 @@ Single executable target, files under `Sources/StrangeLove/`, each one concern:
   the `text/plain` part (HTML fallback), quoted-printable/base64, charset
   handling, HTML strip, body truncation. NB: multipart walk skips the preamble
   (parts before the first boundary) and headerless/empty parts.
-- **`Classifier.swift`** — wraps `FoundationModels`. Builds a
+- **`Classifier.swift`** — runs a sentence-embedding k-NN fast-path
+  (`fastPathVerdict`) first; on deferral, wraps `FoundationModels`: builds a
   `LanguageModelSession` whose instructions carry the distilled guide (or raw
   few-shot fallback), asks for a one-word `SPAM`/`HAM` answer, and parses it.
+- **`Embedder.swift`** — wraps `NLLanguageRecognizer` +
+  `NLEmbedding.sentenceEmbedding(for:)`. Per-language sentence encoders;
+  different-language vectors live in different spaces, so `topNeighbours`
+  filters by `embeddingLanguage` before scoring. Also exposes `cosine` and
+  `partitionSizes` (counterweight check input).
+- **`Reembedder.swift`** — the `reembed` path: scans the corpus and fills
+  missing `Example.embedding`/`embeddingLanguage` by calling `Embedder.embed`.
+  Saves only when something was filled (preserves file mtime on no-op).
 - **`Distiller.swift`** — the `distill` path: builds the summarization prompt
   from the corpus, runs the `claude` CLI, saves the guide into `Corpus.digest`.
   Failures are non-fatal and never corrupt the DB (atomic write only on success).
@@ -110,3 +117,16 @@ Single executable target, files under `Sources/StrangeLove/`, each one concern:
   must stay fast and offline (the `Distiller` is reached solely from the
   `.distill` dispatch branch). Don't move distillation into the `mark`/`add`
   hot paths that Wanderlust drives.
+- **NLEmbedding stays off `add`'s hot path.** `add` deliberately does not
+  embed; Wanderlust spawns a fresh process per learn and the encoder's
+  cold-load would dominate bulk training. Embeddings are filled by `reembed`
+  out-of-band, and `mark`'s fast-path just skips examples whose embedding is
+  nil. Don't reintroduce embedding into `add`.
+- **Fast-path keeps the FP=0 discipline.** Any classifier short-circuit
+  (today: `Classifier.fastPathVerdict`'s k-NN over sentence embeddings) must
+  hold SPAM verdicts to a stricter bar than HAM (asymmetric `k`/threshold)
+  AND gate "all-agree" on counterweight evidence (require ≥k opposing-class
+  same-language examples in the pool). Without the counterweight, an
+  imbalanced corpus trivially satisfies agreement and the fast-path can
+  regress the LLM's 0-FP rate. The embedding ignores sender/Reply-To/auth
+  headers the LLM weighs.

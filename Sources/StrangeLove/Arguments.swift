@@ -15,6 +15,9 @@ struct Arguments {
         /// Out-of-band: distill the message DB into a guide via a larger model.
         /// Never invoked by Wanderlust.
         case distill
+        /// Out-of-band: backfill sentence embeddings for examples that lack
+        /// them. Never invoked by Wanderlust.
+        case reembed
     }
 
     var command: Command
@@ -36,6 +39,7 @@ struct Arguments {
         var sawMark = false
         var sawAdd = false
         var sawDistill = false
+        var sawReembed = false
         var isSpam: Bool? = nil
         var model: String? = nil
 
@@ -57,6 +61,8 @@ struct Arguments {
                 sawAdd = true
             case "distill":
                 sawDistill = true
+            case "reembed":
+                sawReembed = true
             case "--model":
                 if i + 1 < argv.count { model = argv[i + 1] }
                 i += 1
@@ -79,6 +85,9 @@ struct Arguments {
         }
         if sawDistill {
             return Arguments(command: .distill, databasePath: path, model: model)
+        }
+        if sawReembed {
+            return Arguments(command: .reembed, databasePath: path)
         }
         if sawMark {
             return Arguments(command: .mark, databasePath: path)
