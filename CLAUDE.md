@@ -15,7 +15,16 @@ swift build                 # debug -> .build/debug/StrangeLove
 swift build -c release      # release -> .build/release/StrangeLove (used by Wanderlust)
 ```
 
-There are no automated tests; verify by piping a raw email to the binary:
+### Tests
+
+`MessageParser` has swift-testing regression fixtures under `Tests/`. Run them
+with **`./run-tests.sh`, NOT `swift test`** — under CommandLineTools (no Xcode)
+plain `swift test` can't resolve the `Testing` module; the wrapper builds with
+`Testing.framework` on the search path and invokes `swiftpm-testing-helper`
+directly. SourceKit/LSP will flag `import Testing` as missing in the editor —
+ignore it; the wrapper run is authoritative.
+
+End-to-end behavior is still verified by piping a raw email to the binary:
 
 ```sh
 # classify (header block of stdout gets X-Spam: yes; iff spam)

@@ -161,25 +161,36 @@ enum MessageParser {
     }
 
     private static func extractFromMultipart(_ body: String, boundary: String) -> String {
-        let delimiter = "--\(boundary)"
-        let parts = body.components(separatedBy: delimiter)
+        // RFC 2046: a delimiter only counts at the start of a line
+        // (CRLF + "--boundary"). Matching "--boundary" as a bare substring can
+        // split on the token appearing inside encoded/quoted content, so anchor
+        // to a preceding newline. Prepend one so a boundary at offset 0 (no
+        // preamble) is still recognized.
+        let marker = "\n--\(boundary)"
+        let parts = ("\n" + body).components(separatedBy: marker)
         var htmlFallback: String? = nil
 
-        // `components(separatedBy:)` yields the preamble (text before the first
-        // boundary) as parts[0] and the epilogue after the closing "--boundary--"
-        // as the last element; neither is a real MIME part, so skip index 0 and
-        // ignore any part that carries no headers.
+        // The split yields the preamble (text before the first boundary) as
+        // parts[0] and the epilogue after the closing "--boundary--" as the last
+        // element; neither is a real MIME part, so skip index 0 and ignore any
+        // part that carries no headers.
         for part in parts.dropFirst() {
             let (headerText, partBody) = splitHeadersAndBody(part)
             let headers = parseHeaders(headerText)
             // A genuine MIME part begins with a header block; the closing
             // delimiter's trailing epilogue has none.
             guard !headers.isEmpty else { continue }
-            let type = (headers["content-type"] ?? "text/plain").lowercased()
+            // Lowercase only for the substring type checks below. The boundary
+            // token is a case-sensitive opaque string (RFC 2046), so it must be
+            // pulled from the original-case header — lowercasing it here would
+            // mangle mixed-case boundaries (e.g. nodemailer's "--_NmP-…") and
+            // the case-sensitive split above would then match nothing.
+            let rawType = headers["content-type"] ?? "text/plain"
+            let type = rawType.lowercased()
             let enc = (headers["content-transfer-encoding"] ?? "")
                 .trimmingCharacters(in: .whitespaces).lowercased()
 
-            if type.contains("multipart"), let inner = self.boundary(from: type) {
+            if type.contains("multipart"), let inner = self.boundary(from: rawType) {
                 let nested = extractFromMultipart(partBody, boundary: inner)
                 if !nested.isEmpty { return nested }
                 continue
@@ -359,12 +370,33 @@ enum MessageParser {
 
     // MARK: - HTML
 
+    /// Remove `<style>…</style>` and `<script>…</script>` elements, contents
+    /// included. `[\s\S]*?` matches across newlines without `dotMatchesLineSeparators`
+    /// and is non-greedy so adjacent blocks don't merge. An unterminated block
+    /// (no closing tag) is left as-is rather than swallowing the rest of the body.
+    private static func stripRawTextElements(_ html: String) -> String {
+        var s = html
+        for tag in ["style", "script"] {
+            let pattern = "<\(tag)\\b[^>]*>[\\s\\S]*?</\(tag)\\s*>"
+            s = s.replacingOccurrences(
+                of: pattern,
+                with: " ",
+                options: [.regularExpression, .caseInsensitive])
+        }
+        return s
+    }
+
     static func stripHTML(_ html: String) -> String {
-        // Tag-aware scan: drop most tags, but for <a href="..."> capture the
-        // href and emit it after the anchor text as "text [→ URL]". This lets
-        // the classifier see lookalike-domain / unrelated-host bait links that
-        // pure text-extraction would hide.
-        let chars = Array(html)
+        // Drop <style>/<script> blocks first — their *contents* are not visible
+        // text, and CSS especially is bulky enough to crowd the real copy out of
+        // the snippet/embedding window. The char scan below only removes tags,
+        // not the text between them, so these must go up front.
+        //
+        // The scan then drops most tags, but for <a href="..."> it captures the
+        // href and emits it after the anchor text as "text [→ URL]" — so the
+        // classifier sees lookalike-domain / unrelated-host bait links that pure
+        // text extraction would hide.
+        let chars = Array(stripRawTextElements(html))
         var output = ""
         var insideAnchor = false
         var anchorHref = ""
