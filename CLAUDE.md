@@ -37,6 +37,8 @@ printf 'From: x\nSubject: Win a FREE iPhone!!!\n\nClaim your prize\n' \
 .build/debug/StrangeLove -f /tmp/spam.db distill [--model NAME]
 # backfill sentence embeddings on examples that lack them (out-of-band; no network)
 .build/debug/StrangeLove -f /tmp/spam.db reembed
+# inspect the corpus (counts, digest status, recent examples, closest pairs)
+python3 viz-db.py [/path/to/.spamoracle.db]
 ```
 
 ## The Wanderlust contract (do not break)

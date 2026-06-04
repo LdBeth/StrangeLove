@@ -52,7 +52,8 @@ def corpus_hash(spam, good):
 def fmt_date(val):
     try:
         if isinstance(val, (int, float)):
-            dt = datetime.fromtimestamp(val, tz=timezone.utc)
+            # Swift JSONEncoder stores Date as timeIntervalSinceReferenceDate (epoch 2001-01-01)
+            dt = datetime.fromtimestamp(val + 978307200, tz=timezone.utc)
         else:
             dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
         return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
