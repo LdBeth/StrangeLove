@@ -18,11 +18,13 @@ swift build -c release      # release -> .build/release/StrangeLove (used by Wan
 ### Tests
 
 `MessageParser` has swift-testing regression fixtures under `Tests/`. Run them
-with **`./run-tests.sh`, NOT `swift test`** — under CommandLineTools (no Xcode)
-plain `swift test` can't resolve the `Testing` module; the wrapper builds with
-`Testing.framework` on the search path and invokes `swiftpm-testing-helper`
-directly. SourceKit/LSP will flag `import Testing` as missing in the editor —
-ignore it; the wrapper run is authoritative.
+with **`./run-tests.sh`, NOT bare `swift test`** — under CommandLineTools (no
+Xcode) the compiler can't find the `TestingMacros` plugin (`@Test`/`#expect`
+fail to expand), because it ships in the `plugins/testing/` subdirectory of the
+host plugin dir, which is not on the default search path. The wrapper is just
+`swift test` with `-plugin-path` pointed at it. SourceKit/LSP will flag
+`import Testing` as missing in the editor — ignore it; the wrapper run is
+authoritative.
 
 End-to-end behavior is still verified by piping a raw email to the binary:
 

@@ -1,19 +1,15 @@
 #!/bin/sh
-# Runs swift-testing tests under CommandLineTools (no Xcode).
-# Plain `swift test` cannot resolve `Testing` here, so build with
-# Testing.framework on the search path and invoke the test helper directly
-# with DYLD_* set so Testing + lib_TestingInterop resolve at runtime.
+# Runs the swift-testing tests under CommandLineTools (no Xcode).
+#
+# Plain `swift test` fails here with
+#   plugin for module 'TestingMacros' not found
+# because the macro plugin ships in a subdirectory of the host plugin dir
+# that the compiler does not search by default. Point -plugin-path at it and
+# the normal `swift test` path works.
 
 set -e
 
-CLT=/Library/Developer/CommandLineTools
-F=$CLT/Library/Developer/Frameworks
-
-swift build --build-tests -Xswiftc -F -Xswiftc "$F" -Xlinker -F -Xlinker "$F"
-
-DYLD_FRAMEWORK_PATH=$F \
-DYLD_LIBRARY_PATH=$CLT/Library/Developer/usr/lib \
-  "$CLT/usr/libexec/swift/pm/swiftpm-testing-helper" \
-  --test-bundle-path "$(ls -d .build/*/debug/*.xctest/Contents/MacOS/*PackageTests)" \
-  --testing-library swift-testing \
+exec swift test \
+  -Xswiftc -plugin-path \
+  -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing \
   "$@"

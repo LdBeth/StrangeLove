@@ -51,7 +51,7 @@ enum Classifier {
 
         // We only need a single word ("SPAM"/"HAM"), so cap generation hard and
         // run greedily for a deterministic, fast verdict.
-        let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 5)
+        let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 5)
 
         do {
             let response = try await session.respond(to: prompt, options: options)
